@@ -32,6 +32,26 @@ kn_pod_logs() {
     esac
 }
 
+kn_pod_logs_less() {
+    local pod="$1"
+    
+    # Check containers
+    local containers
+    containers=$(kn_kubectl get pod "$pod" -o jsonpath='{.spec.containers[*].name}' 2>/dev/null)
+    local container_count
+    container_count=$(echo "$containers" | wc -w)
+    
+    local container_arg=""
+    if [[ "$container_count" -gt 1 ]]; then
+        local selected_container
+        selected_container=$(echo "$containers" | tr ' ' '\n' | fzf --prompt="Select Container> " --height="30%")
+        if [[ -z "$selected_container" ]]; then return; fi
+        container_arg="-c ${selected_container}"
+    fi
+
+    kn_kubectl logs "$pod" ${container_arg} | less -R
+}
+
 kn_pod_exec() {
     local pod="$1"
     
@@ -59,10 +79,16 @@ kn_pod_env() {
 
 kn_pod_delete() {
     local pod="$1"
-    if kn_confirm_dangerous "Delete Pod" "You are about to delete Pod: $pod"; then
-        kn_kubectl delete pod "$pod"
-        echo -e "${GREEN}Pod $pod deleted.${RESET}"
+    if ! kn_confirm_dangerous "Delete Pod" "You are about to delete Pod: $pod"; then
+        return 1
     fi
+
+    if kn_kubectl delete pod "$pod"; then
+        echo -e "${GREEN}Pod $pod deleted.${RESET}"
+        return 0
+    fi
+
+    return 1
 }
 
 # ---- ConfigMap Actions ----
@@ -122,9 +148,9 @@ kn_action_menu() {
     
     while true; do
         echo -e "\n${BLUE}━━━ ${res_type}/${res_name} ━━━${RESET}"
-        
+
         if [[ "$res_type" == "pod" ]]; then
-            echo -e "  ${BOLD}[l]${RESET} Logs    ${BOLD}[x]${RESET} Exec    ${BOLD}[d]${RESET} Describe    ${BOLD}[e]${RESET} Env    ${BOLD}[R]${RESET} Delete Pod"
+            echo -e "  ${BOLD}[l]${RESET} Logs    ${BOLD}[L]${RESET} Less Logs    ${BOLD}[x]${RESET} Exec    ${BOLD}[d]${RESET} Describe    ${BOLD}[e]${RESET} Env    ${BOLD}[R]${RESET} Delete Pod"
         elif [[ "$res_type" == "deploy" ]]; then
             echo -e "  ${BOLD}[D]${RESET} View Deploy  ${BOLD}[i]${RESET} Change Image    ${BOLD}[E]${RESET} Edit Deploy"
         elif [[ "$res_type" == "svc" ]]; then
@@ -133,28 +159,48 @@ kn_action_menu() {
             echo -e "  ${BOLD}[c]${RESET} View ConfigMap  ${BOLD}[C]${RESET} Edit ConfigMap"
         fi
         
-        echo -e "  ${BOLD}[q]${RESET} Quit"
+        echo -e "  ${BOLD}[q]${RESET} Back"
+
+        # Make sure STDIN is pointing to the terminal
+        if ! exec < /dev/tty; then
+            kn_log_error "Interactive terminal is required."
+            return 1
+        fi
         
         echo -ne "\nSelect action: "
+        # We need to correctly handle the exit code of read
         read -r -n 1 choice
+        local read_status=$?
+        if [[ "$read_status" -eq "$KN_RC_EXIT" ]]; then
+            echo ""
+            return "$KN_RC_EXIT"
+        fi
+
+        if [[ "$read_status" -ne 0 ]]; then
+            echo ""
+            return "$KN_RC_BACK"
+        fi
         echo ""
         
         case "$choice" in
             l) if [[ "$res_type" == "pod" ]]; then kn_pod_logs "$res_name"; fi ;;
+            L) if [[ "$res_type" == "pod" ]]; then kn_pod_logs_less "$res_name"; fi ;;
             x) if [[ "$res_type" == "pod" ]]; then kn_pod_exec "$res_name"; fi ;;
             d) if [[ "$res_type" == "pod" ]]; then kn_pod_describe "$res_name"; fi ;;
             e) if [[ "$res_type" == "pod" ]]; then kn_pod_env "$res_name"; fi ;;
-            R) if [[ "$res_type" == "pod" ]]; then kn_pod_delete "$res_name"; break; fi ;;
+            R) if [[ "$res_type" == "pod" ]]; then if kn_pod_delete "$res_name"; then return "$KN_RC_BACK"; fi; fi ;;
             c) if [[ "$res_type" == "cm" ]]; then kn_cm_view "$res_name"; fi ;;
             C) if [[ "$res_type" == "cm" ]]; then kn_cm_edit "$res_name"; fi ;;
             D) if [[ "$res_type" == "deploy" ]]; then kn_deploy_view "$res_name"; fi ;;
             i) if [[ "$res_type" == "deploy" ]]; then kn_deploy_set_image "$res_name"; fi ;;
             E) if [[ "$res_type" == "deploy" ]]; then kn_deploy_edit "$res_name"; fi ;;
             s) if [[ "$res_type" == "svc" ]]; then kn_svc_view "$res_name"; fi ;;
-            q|Q) break ;;
+            q|Q) return "$KN_RC_BACK" ;;
             *) echo -e "${RED}Invalid option${RESET}" ;;
         esac
     done
+
+    return 0
 }
 
 # ---- Topology ----

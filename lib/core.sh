@@ -9,6 +9,11 @@ export GRAY='\033[90m'
 export BOLD='\033[1m'
 export RESET='\033[0m'
 
+export KN_RC_BACK=101
+export KN_RC_NO_RESOURCES=102
+export KN_RC_EXIT=130
+export KN_FZF_LAST_KEY=""
+
 kn_log_info() {
     echo -e "${BLUE}[INFO]${RESET} $1" >&2
 }

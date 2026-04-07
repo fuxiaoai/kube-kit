@@ -26,10 +26,19 @@ ${sorted_ctx}"
     fi
     
     local selected
-    selected=$(echo "$sorted_ctx" | fzf --prompt="Cluster> " --height="40%" --header="Select Cluster")
+    selected=$(echo "$sorted_ctx" | kn_fzf_select "Select Cluster (Esc stays on this level | Ctrl-C exits)" "" "" "" "Cluster> " "40%")
+    local select_status=$?
     
+    if [[ "$select_status" -eq "$KN_RC_BACK" ]]; then
+        return "$KN_RC_BACK"
+    fi
+
+    if [[ "$select_status" -ne 0 ]]; then
+        return "$select_status"
+    fi
+
     if [[ -z "$selected" ]]; then
-        exit 0
+        return "$KN_RC_BACK"
     fi
     
     # Remove " (current)" if selected
@@ -47,10 +56,19 @@ kn_select_namespace() {
 ${sorted_ns}"
     
     local selected
-    selected=$(echo "$sorted_ns" | fzf --prompt="Namespace [${KN_CLUSTER}]> " --height="40%" --header="Select Namespace")
+    selected=$(echo "$sorted_ns" | kn_fzf_select "Select Namespace (Esc goes back | Ctrl-C exits)" "" "" "" "Namespace [${KN_CLUSTER}]> " "40%")
+    local select_status=$?
     
+    if [[ "$select_status" -eq "$KN_RC_BACK" ]]; then
+        return "$KN_RC_BACK"
+    fi
+
+    if [[ "$select_status" -ne 0 ]]; then
+        return "$select_status"
+    fi
+
     if [[ -z "$selected" ]]; then
-        exit 0
+        return "$KN_RC_BACK"
     fi
     
     export KN_NAMESPACE="$selected"
@@ -148,7 +166,7 @@ ${cm_data}"
     
     if [[ -z "$all_data" ]]; then
         kn_log_warn "No resources found in namespace ${KN_NAMESPACE}"
-        exit 0
+        return "$KN_RC_NO_RESOURCES"
     fi
     
     local preview_cmd="
@@ -164,12 +182,22 @@ ${cm_data}"
     "
     
     local selected
-    selected=$(echo "$all_data" | kn_fzf_select "Select Resource in ${KN_NAMESPACE} (Ctrl-/ preview | Ctrl-y copy row)" "$preview_cmd" "" "$keyword")
+    selected=$(echo "$all_data" | kn_fzf_select "Select Resource in ${KN_NAMESPACE} (Esc back | Ctrl-/ preview | Ctrl-y copy row | Ctrl-C exit)" "$preview_cmd" "" "$keyword")
+    local select_status=$?
     
+    if [[ "$select_status" -eq "$KN_RC_BACK" ]]; then
+        return "$KN_RC_BACK"
+    fi
+
+    if [[ "$select_status" -ne 0 ]]; then
+        return "$select_status"
+    fi
+
     if [[ -z "$selected" ]]; then
-        exit 0
+        return "$KN_RC_BACK"
     fi
     
     export KN_RESOURCE_TYPE=$(echo "$selected" | awk '{print $1}')
     export KN_RESOURCE_NAME=$(echo "$selected" | awk '{print $2}')
+    return 0
 }

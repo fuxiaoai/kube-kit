@@ -63,14 +63,30 @@ kn_fzf_select() {
     local header="$1"
     local preview_cmd="$2"
     local multi="$3"
+    local query="$4"
+    local prompt="$5"
+    local height="${6:-60%}"
+    local output
+    local status
     
+    KN_FZF_LAST_KEY=""
+
     local fzf_opts=(
         --ansi
         --header="$header"
-        --height="60%"
+        --height="$height"
         --bind="ctrl-/:toggle-preview"
         --bind="ctrl-y:execute(echo {} | pbcopy 2>/dev/null || echo {} | xclip -sel clip 2>/dev/null || echo {} | clip.exe 2>/dev/null)+abort"
+        --expect="esc"
     )
+
+    if [[ -n "$prompt" ]]; then
+        fzf_opts+=(--prompt="$prompt")
+    fi
+
+    if [[ -n "$query" ]]; then
+        fzf_opts+=(--query="$query")
+    fi
     
     if [[ -n "$preview_cmd" ]]; then
         fzf_opts+=(--preview="$preview_cmd" --preview-window="right:50%:wrap")
@@ -80,5 +96,24 @@ kn_fzf_select() {
         fzf_opts+=(--multi)
     fi
     
-    fzf "${fzf_opts[@]}"
+    output=$(fzf "${fzf_opts[@]}")
+    status=$?
+
+    if [[ "$status" -ne 0 ]]; then
+        return "$status"
+    fi
+
+    if [[ "$output" == *$'\n'* ]]; then
+        KN_FZF_LAST_KEY="${output%%$'\n'*}"
+        output="${output#*$'\n'}"
+    elif [[ "$output" == "esc" ]]; then
+        KN_FZF_LAST_KEY="esc"
+        output=""
+    fi
+
+    if [[ "$KN_FZF_LAST_KEY" == "esc" ]]; then
+        return "$KN_RC_BACK"
+    fi
+
+    printf '%s\n' "$output"
 }
